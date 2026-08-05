@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+
+# Locally-generated dashboards likely contain real production data —
+# keep them out of this (potentially public) repo. index.html (the
+# blank template) is intentionally NOT excluded here.
+Production_Dashboard_*.html
+output.html
+*.xlsx

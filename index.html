@@ -1,0 +1,1548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Production Summary Dashboard</title>
+<style>
+  :root{
+    --bg:#0f1626; --panel:#161f36; --panel2:#1c2743; --border:#2a3555;
+    --text:#e8ecf5; --muted:#96a2c2; --accent:#4f8cff; --accent2:#39d0b6;
+    --warn:#ffb648; --bad:#ff5d6c; --good:#39d0b6;
+    /* Standardized type scale - only these five sizes are used anywhere in the dashboard */
+    --fs-xs: 12px;   /* chart axis ticks, chart data-value labels, small print */
+    --fs-sm: 13px;   /* secondary text: kpi labels, card descriptions, header subtitle */
+    --fs-base: 14px; /* body text: tables, chart legends, chart category labels, nav */
+    --fs-md: 16px;   /* card / section headings, heatmap value */
+    --fs-lg: 22px;   /* KPI big numbers */
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);}
+  header{padding:20px 28px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;}
+  header h1{font-size:var(--fs-md);margin:0;font-weight:600;}
+  header .sub{color:var(--muted);font-size:var(--fs-sm);margin-top:3px;}
+  nav{display:flex;gap:6px;padding:0 28px;border-bottom:1px solid var(--border);background:var(--panel);}
+  nav button{background:none;border:none;color:var(--muted);padding:14px 18px;font-size:var(--fs-base);cursor:pointer;border-bottom:2px solid transparent;font-weight:500;}
+  nav button.active{color:var(--text);border-bottom:2px solid var(--accent);}
+  main{padding:24px 28px;max-width:1400px;margin:0 auto;}
+  .tab{display:none;}
+  .tab.active{display:block;}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:22px;}
+  .kpi{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px 18px;}
+  .kpi .label{color:var(--muted);font-size:var(--fs-sm);text-transform:uppercase;letter-spacing:.04em;}
+  .kpi .value{font-size:var(--fs-lg);font-weight:700;margin-top:6px;}
+  .kpi .value.good{color:var(--good);} .kpi .value.warn{color:var(--warn);} .kpi .value.bad{color:var(--bad);}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-bottom:16px;}
+  .card h3{margin:0 0 4px 0;font-size:var(--fs-md);font-weight:600;}
+  .card .desc{color:var(--muted);font-size:var(--fs-sm);margin-bottom:12px;}
+  .chartwrap{width:100%;overflow-x:auto;}
+  svg.chart{width:100%;height:auto;display:block;}
+  svg.chart text{fill:var(--muted);font-size:var(--fs-xs);}
+  svg.chart .legend text{fill:var(--text);font-size:var(--fs-base);font-weight:600;}
+  svg.chart .ylabel{fill:var(--muted);font-size:var(--fs-base);}
+  svg.chart .vlabel{fill:var(--text);font-size:var(--fs-xs);font-weight:700;}
+  svg.chart .gridline{stroke:var(--border);stroke-width:1;}
+  svg.chart .axisline{stroke:var(--border);stroke-width:1;}
+  table{width:100%;border-collapse:collapse;font-size:var(--fs-base);}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap;}
+  th{color:var(--muted);font-weight:600;cursor:pointer;position:sticky;top:0;background:var(--panel);}
+  th:hover{color:var(--text);}
+  tr:hover td{background:var(--panel2);}
+  .tablewrap{overflow-x:auto;max-height:560px;overflow-y:auto;}
+  .heat-grid{display:grid;grid-template-columns:repeat(10,1fr);gap:6px;}
+  .heat-cell{border-radius:8px;padding:10px 8px;text-align:center;cursor:pointer;border:1px solid var(--border);}
+  .heat-cell .d{font-size:var(--fs-xs);color:rgba(255,255,255,.85);}
+  .heat-cell .e{font-size:var(--fs-md);font-weight:700;margin-top:3px;}
+  .pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:var(--fs-xs);font-weight:600;}
+  .pill.good{background:rgba(57,208,182,.15);color:var(--good);}
+  .pill.warn{background:rgba(255,182,72,.15);color:var(--warn);}
+  .pill.bad{background:rgba(255,93,108,.15);color:var(--bad);}
+  .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:50;align-items:center;justify-content:center;}
+  .modal-bg.active{display:flex;}
+  .modal{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:22px;max-width:720px;width:92%;max-height:80vh;overflow-y:auto;}
+  .modal h3{margin-top:0;}
+  .modal .close{float:right;cursor:pointer;color:var(--muted);font-size:20px;}
+  .note{color:var(--muted);font-size:12px;margin-top:6px;}
+  .datebar{display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap;}
+  .datebar select{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:14px;}
+  .datebar button{background:var(--panel);color:var(--text);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:14px;cursor:pointer;}
+  .datebar button:hover{background:var(--panel2);}
+  .datebar .daylabel{color:var(--muted);font-size:13px;}
+  @media(max-width:900px){.grid2{grid-template-columns:1fr;} .heat-grid{grid-template-columns:repeat(5,1fr);}}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Production Summary Dashboard</h1>
+    <div class="sub">Spinning MIS · No data loaded yet — upload a workbook in the Manage Data tab · Unit 1 &amp; Unit 2</div>
+  </div>
+  <div class="sub">Generated for monthly &amp; daily production review</div>
+</header>
+
+<nav>
+  <button class="tabbtn active" data-tab="dailyreport">Daily Report</button>
+  <button class="tabbtn" data-tab="overview">Monthly Overview</button>
+  <button class="tabbtn" data-tab="yearly">Yearly Overview</button>
+  <button class="tabbtn" data-tab="stoppage">Monthly Stoppage &amp; Usage Summary</button>
+  <button class="tabbtn" data-tab="daily">Daily Detail Overview</button>
+  <button class="tabbtn" data-tab="managedata">Manage Data</button>
+</nav>
+
+<main>
+  <div class="tab active" id="tab-dailyreport">
+    <div class="card">
+      <div class="datebar">
+        <button id="dayPrev">&larr; Prev</button>
+        <select id="dateSelect"></select>
+        <button id="dayNext">Next &rarr;</button>
+        <span class="daylabel" id="dayLabel"></span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Actual vs Target Production &amp; Efficiency</h3>
+      <div class="kpis" id="dayKpiProd"></div>
+    </div>
+    <div class="card">
+      <h3>Top Stoppage Reason (Unit-wise)</h3>
+      <div class="kpis" id="dayKpiStoppage"></div>
+    </div>
+    <div class="card">
+      <h3>Waste &amp; Waste Rate</h3>
+      <div class="kpis" id="dayKpiWaste"></div>
+    </div>
+    <div class="card">
+      <h3>Item-level Production</h3>
+      <div class="desc">Target vs actual by yarn count, this date &middot; Unit 1 grouped above Unit 2, ascending by actual output</div>
+      <div class="chartwrap" id="chartDayItems"></div>
+    </div>
+    <div class="card">
+      <h3>Product-wise Production</h3>
+      <div class="desc">Actual vs target by product/yarn count, this date</div>
+      <div class="tablewrap">
+        <table id="dayProductTable">
+          <thead><tr><th>Unit</th><th>Product / Count</th><th>Mcs</th><th>Target (kg)</th><th>Actual (kg)</th><th>Efficiency %</th><th>Waste (kg)</th></tr></thead>
+          <tbody id="dayProductTbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Unit 1 vs Unit 2</h3>
+      <div class="desc">Target vs actual by unit, this date</div>
+      <div class="chartwrap" id="chartDayUnits"></div>
+    </div>
+    <div class="card">
+      <h3>Waste Types</h3>
+      <div class="desc">Waste quantity by type, this date (kg) &middot; sorted highest to lowest</div>
+      <div class="tablewrap">
+        <table id="dayWasteTable">
+          <thead><tr><th>Waste Type</th><th>Unit 1 (kg)</th><th>Unit 2 (kg)</th><th>Total (kg)</th></tr></thead>
+          <tbody id="dayWasteTbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Stoppage Reasons</h3>
+      <div class="desc">% stoppage by category and unit, this date</div>
+      <div class="chartwrap" id="chartDayStoppage"></div>
+    </div>
+    <div class="card">
+      <h3>Electricity &amp; Waste Summary</h3>
+      <div class="desc">Utilities and waste totals for this date</div>
+      <div class="kpis" id="dayUtilRow"></div>
+    </div>
+  </div>
+
+  <div class="tab" id="tab-overview">
+    <div class="card">
+      <div class="datebar">
+        <span class="daylabel">Month:</span>
+        <select id="overviewMonthFilter"></select>
+      </div>
+    </div>
+    <div class="kpis" id="kpi-row"></div>
+    <div class="grid2">
+      <div class="card"><h3>Actual vs Target Production</h3><div class="desc">Daily production (kg) across the selected month(s)</div><div class="chartwrap" id="chartTrend"></div></div>
+      <div class="card"><h3>Efficiency % Trend</h3><div class="desc">Actual/Target production, daily</div><div class="chartwrap" id="chartEff"></div></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><h3>Unit 1 vs Unit 2 Production</h3><div class="desc">Daily actual output split by unit (stacked)</div><div class="chartwrap" id="chartUnits"></div></div>
+      <div class="card"><h3>Waste Qty &amp; Waste %</h3><div class="desc">Daily waste in kg (bars, left axis) with waste rate (line, right axis)</div><div class="chartwrap" id="chartWaste"></div></div>
+    </div>
+    <div class="card"><h3>Production Mix by Yarn Count</h3><div class="desc">Total actual output (kg) by count/mix, selected month(s)</div><div class="chartwrap" id="chartMix"></div></div>
+  </div>
+
+  <div class="tab" id="tab-yearly">
+    <div class="kpis" id="yearly-kpi-row"></div>
+    <div class="card"><h3>Production &amp; Efficiency by Month</h3><div class="desc">Actual production (bars) vs efficiency % (line), month over month</div><div class="chartwrap" id="chartYearlyProd"></div></div>
+    <div class="card">
+      <h3>Monthly Summary</h3>
+      <div class="desc">Every month currently loaded in this dashboard</div>
+      <div class="tablewrap">
+        <table id="yearlyTable">
+          <thead><tr><th>Month</th><th>Target (kg)</th><th>Actual (kg)</th><th>Efficiency %</th><th>Waste (kg)</th><th>Waste %</th><th>Days</th></tr></thead>
+          <tbody id="yearlyTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab" id="tab-stoppage">
+    <div class="card"><h3>Stoppage Reasons — Monthly Pareto</h3><div class="desc">Sum of daily stoppage % across the month, by unit</div><div class="chartwrap" id="chartPareto"></div></div>
+    <div class="grid2">
+      <div class="card"><h3>Electricity Consumption</h3><div class="desc">EB (grid) vs Solar units consumed, daily (stacked)</div><div class="chartwrap" id="chartElec"></div></div>
+      <div class="card"><h3>Units per Kg (UKG) vs Efficiency</h3><div class="desc">Energy intensity (left axis) vs production efficiency (right axis)</div><div class="chartwrap" id="chartUkg"></div></div>
+    </div>
+  </div>
+
+  <div class="tab" id="tab-daily">
+    <div class="card"><h3>Daily Efficiency Heatmap</h3><div class="desc">Click a day to see item-level (yarn count) breakdown for that date</div><div class="heat-grid" id="heatGrid"></div></div>
+    <div class="card">
+      <h3>Daily Production Register</h3>
+      <div class="desc">Click any column header to sort &middot; click a row to drill into that day's items</div>
+      <div class="tablewrap">
+        <table id="dailyTable">
+          <thead><tr>
+            <th data-k="date">Date</th><th data-k="target">Target (kg)</th><th data-k="actual">Actual (kg)</th>
+            <th data-k="efficiency">Efficiency %</th><th data-k="waste">Waste (kg)</th><th data-k="waste_pct">Waste %</th>
+            <th data-k="u1_actual">Unit 1 (kg)</th><th data-k="u2_actual">Unit 2 (kg)</th><th data-k="eb">EB Units</th>
+            <th data-k="top_reason">Top Stoppage Reason</th>
+          </tr></thead>
+          <tbody id="dailyTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab" id="tab-managedata">
+    <div class="card">
+      <h3>Upload / Replace Monthly Data</h3>
+      <div class="desc">Upload the monthly MIS workbook (.xlsx) — add a new sheet and re-upload to bring in a new day, or delete a sheet and re-upload to remove one. Everything is re-parsed right here in your browser (no internet needed) and every chart and table below refreshes to match exactly what's in the file.</div>
+      <input type="file" id="xlsxUpload" accept=".xlsx">
+      <div class="note" id="uploadStatus"></div>
+    </div>
+    <div class="card">
+      <h3>Loaded Days</h3>
+      <div class="desc">Days currently loaded into this dashboard &middot; delete a single day without re-uploading the whole workbook</div>
+      <div class="tablewrap">
+        <table id="manageDatesTable">
+          <thead><tr><th>Date</th><th>Sheet Name</th><th>Target (kg)</th><th>Actual (kg)</th><th></th></tr></thead>
+          <tbody id="manageDatesTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <span class="close" id="modalClose">&times;</span>
+    <h3 id="modalTitle">Day detail</h3>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<script>
+let RAW = {"company_name": "", "items": [], "unit_totals": [], "grand_totals": [], "stoppages": [], "electricity": [], "waste_stock": []};
+const COLORS = {accent:'#4f8cff', accent2:'#39d0b6', warn:'#ffb648', bad:'#ff5d6c', muted:'#96a2c2'};
+
+/* ======================================================================
+   Offline XLSX reader — ZIP central-directory parsing + native
+   DecompressionStream('deflate-raw') + regex-based OOXML extraction.
+   No external libraries. Lets "Manage Data" re-parse an uploaded/edited
+   monthly workbook entirely client-side.
+   ====================================================================== */
+function u16(view, off){ return view.getUint16(off, true); }
+function u32(view, off){ return view.getUint32(off, true); }
+
+function findEOCD(bytes){
+  const EOCD_SIG = 0x06054b50;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const maxScan = Math.min(bytes.length, 65557);
+  for(let i = bytes.length - 22; i >= bytes.length - maxScan && i >= 0; i--){
+    if(u32(view, i) === EOCD_SIG) return i;
+  }
+  throw new Error('Not a valid .xlsx/.zip file (EOCD not found)');
+}
+
+function parseCentralDirectory(bytes){
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const eocdOff = findEOCD(bytes);
+  const cdOffset = u32(view, eocdOff + 16);
+  const cdCount = u16(view, eocdOff + 10);
+  const entries = {};
+  let off = cdOffset;
+  const CD_SIG = 0x02014b50;
+  for(let i=0;i<cdCount;i++){
+    if(u32(view, off) !== CD_SIG) throw new Error('Corrupt zip central directory');
+    const method = u16(view, off+10);
+    const compSize = u32(view, off+20);
+    const uncompSize = u32(view, off+24);
+    const nameLen = u16(view, off+28);
+    const extraLen = u16(view, off+30);
+    const commentLen = u16(view, off+32);
+    const localHeaderOffset = u32(view, off+42);
+    const nameBytes = bytes.subarray(off+46, off+46+nameLen);
+    const name = new TextDecoder('utf-8').decode(nameBytes);
+    entries[name] = { method, compSize, uncompSize, localHeaderOffset };
+    off += 46 + nameLen + extraLen + commentLen;
+  }
+  return entries;
+}
+
+async function inflateRawBytes(compressedBytes){
+  const ds = new DecompressionStream('deflate-raw');
+  const writer = ds.writable.getWriter();
+  writer.write(compressedBytes);
+  writer.close();
+  const chunks = [];
+  const reader = ds.readable.getReader();
+  while(true){
+    const {done, value} = await reader.read();
+    if(done) break;
+    chunks.push(value);
+  }
+  const total = chunks.reduce((s,c)=>s+c.length,0);
+  const out = new Uint8Array(total);
+  let offset=0;
+  for(const c of chunks){ out.set(c, offset); offset+=c.length; }
+  return out;
+}
+
+async function readZipEntry(bytes, entries, name){
+  const e = entries[name];
+  if(!e) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const lh = e.localHeaderOffset;
+  const LOCAL_SIG = 0x04034b50;
+  if(u32(view, lh) !== LOCAL_SIG) throw new Error('Corrupt zip local header for '+name);
+  const nameLen = u16(view, lh+26);
+  const extraLen = u16(view, lh+28);
+  const dataStart = lh + 30 + nameLen + extraLen;
+  const compData = bytes.subarray(dataStart, dataStart + e.compSize);
+  if(e.method === 0) return compData;
+  if(e.method === 8) return await inflateRawBytes(compData);
+  throw new Error('Unsupported zip compression method '+e.method+' for '+name);
+}
+
+function colToNum(col){
+  let n = 0;
+  for(let i=0;i<col.length;i++) n = n*26 + (col.charCodeAt(i) - 64);
+  return n;
+}
+
+function decodeXmlEntities(s){
+  return s.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&amp;/g,'&');
+}
+
+function parseSharedStrings(xml){
+  if(!xml) return [];
+  const sst = [];
+  const siRegex = /<si>([\s\S]*?)<\/si>/g;
+  let m;
+  while((m = siRegex.exec(xml)) !== null){
+    let text = '';
+    const tRegex = /<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/g;
+    let tm;
+    while((tm = tRegex.exec(m[1])) !== null) text += decodeXmlEntities(tm[1]);
+    sst.push(text);
+  }
+  return sst;
+}
+
+function parseCellRef(ref){
+  const m = /^([A-Z]+)(\d+)$/.exec(ref);
+  return { col: colToNum(m[1]), row: parseInt(m[2], 10) };
+}
+
+function parseSheetGrid(xml, sst){
+  const grid = {};
+  const rowRegex = /<row[^>]*r="(\d+)"[^>]*>([\s\S]*?)<\/row>/g;
+  let rm;
+  while((rm = rowRegex.exec(xml)) !== null){
+    const rowNum = parseInt(rm[1], 10);
+    const rowContent = rm[2];
+    const cellRegex = /<c([^>]*)\/>|<c([^>]*)>([\s\S]*?)<\/c>/g;
+    let cm;
+    while((cm = cellRegex.exec(rowContent)) !== null){
+      const attrs = cm[1] !== undefined ? cm[1] : cm[2];
+      const inner = cm[3] || '';
+      const refMatch = /r="([A-Z]+\d+)"/.exec(attrs);
+      if(!refMatch) continue;
+      const { col, row } = parseCellRef(refMatch[1]);
+      const typeMatch = /t="([^"]+)"/.exec(attrs);
+      const type = typeMatch ? typeMatch[1] : null;
+      const vMatch = /<v>([\s\S]*?)<\/v>/.exec(inner);
+      let value = null;
+      if(type === 's'){
+        if(vMatch) value = sst[parseInt(vMatch[1], 10)];
+      } else if(type === 'inlineStr'){
+        const isMatch = /<is>([\s\S]*?)<\/is>/.exec(inner);
+        if(isMatch){
+          const tMatch = /<t(?:\s[^>]*)?>([\s\S]*?)<\/t>/.exec(isMatch[1]);
+          value = tMatch ? decodeXmlEntities(tMatch[1]) : '';
+        }
+      } else if(type === 'str'){
+        if(vMatch) value = decodeXmlEntities(vMatch[1]);
+      } else if(type === 'b'){
+        if(vMatch) value = vMatch[1] === '1';
+      } else {
+        if(vMatch){
+          const raw = vMatch[1];
+          value = raw === '' ? null : parseFloat(raw);
+        }
+      }
+      if(!grid[row]) grid[row] = {};
+      grid[row][col] = value;
+    }
+  }
+  return grid;
+}
+
+function gcell(grid, r, c){
+  return (grid[r] && grid[r][c] !== undefined) ? grid[r][c] : null;
+}
+
+function attrVal(tag, attrName){
+  // Attribute-order-independent extraction (Excel/LibreOffice/openpyxl all order
+  // attributes differently), e.g. matches both name="x" r:id="y" and r:id="y" name="x".
+  const re = new RegExp(attrName.replace(':','\\:') + '="([^"]*)"');
+  const m = re.exec(tag);
+  return m ? m[1] : null;
+}
+
+async function readWorkbookSheets(bytes){
+  const entries = parseCentralDirectory(bytes);
+
+  const wbXml = new TextDecoder().decode(await readZipEntry(bytes, entries, 'xl/workbook.xml'));
+  const sheetTags = [...wbXml.matchAll(/<sheet\b[^>]*\/>/g)].map(m => m[0]);
+  const sheetMatches = sheetTags
+    .map(tag => [attrVal(tag, 'name'), attrVal(tag, 'r:id')])
+    .filter(([name, rid]) => name && rid);
+
+  const relsXml = new TextDecoder().decode(await readZipEntry(bytes, entries, 'xl/_rels/workbook.xml.rels'));
+  const relTags = [...relsXml.matchAll(/<Relationship\b[^>]*\/>/g)].map(m => m[0]);
+  const relMap = {};
+  for(const tag of relTags){
+    const id = attrVal(tag, 'Id'), target = attrVal(tag, 'Target');
+    if(id && target) relMap[id] = target;
+  }
+
+  const sstBytes = await readZipEntry(bytes, entries, 'xl/sharedStrings.xml');
+  const sst = parseSharedStrings(sstBytes ? new TextDecoder().decode(sstBytes) : '');
+
+  const sheets = [];
+  for(const [name, rid] of sheetMatches){
+    const target = relMap[rid];
+    if(!target) continue;
+    const path = target.startsWith('/') ? target.slice(1) : ('xl/' + target.replace(/^\.?\/?/, ''));
+    const sheetBytes = await readZipEntry(bytes, entries, path);
+    if(!sheetBytes) continue;
+    const xml = new TextDecoder().decode(sheetBytes);
+    const grid = parseSheetGrid(xml, sst);
+    sheets.push({ name, grid });
+  }
+  return sheets;
+}
+
+// Mirrors Python's parse_workbook() exactly.
+async function parseWorkbookFromBytes(bytes){
+  const sheets = await readWorkbookSheets(bytes);
+  const items = [], unit_totals = [], grand_totals = [], stoppages = [], electricity = [], waste_stock = [];
+  let company_name = null;
+
+  for(const { name: sheet, grid } of sheets){
+    const m = /^(\d{2})\.(\d{2})\.(\d{2,4})/.exec(sheet);
+    if(!m) continue;
+    let [, dd, mm, yy] = m;
+    yy = yy.length === 2 ? ('20' + yy) : yy;
+    const date = `${yy}-${mm}-${dd}`;
+
+    if(company_name === null){
+      const v = gcell(grid, 1, 2);
+      if(typeof v === 'string') company_name = v.trim();
+    }
+
+    const rowNums = Object.keys(grid).map(Number).sort((a,b)=>a-b);
+    const maxRow = rowNums.length ? rowNums[rowNums.length-1] : 0;
+    let currentUnit = null;
+
+    for(const r of rowNums){
+      const b = gcell(grid, r, 2), c = gcell(grid, r, 3), d = gcell(grid, r, 4),
+            e = gcell(grid, r, 5), f = gcell(grid, r, 6), g = gcell(grid, r, 7),
+            h = gcell(grid, r, 8), i_ = gcell(grid, r, 9), j = gcell(grid, r, 10);
+
+      if(typeof b === 'string' && b.trim().toUpperCase().startsWith('UNIT')){
+        currentUnit = b.trim();
+        continue;
+      }
+      if(typeof b === 'number' && Number.isInteger(b) && c){
+        items.push({ date, sheet, unit: currentUnit, sl_no: b, item: c, no_of_mcs: d,
+                     count: e, target_prod: f, t_gps: g, actual_prod: h, a_gps: i_, waste_qty: j });
+        continue;
+      }
+      if(b === null && c === null && d !== null && typeof f === 'number' && currentUnit){
+        unit_totals.push({ date, sheet, unit: currentUnit, total_mcs: d, target_prod: f,
+                            actual_prod: h, waste_qty: j });
+        continue;
+      }
+      if(c === 'Grand Total'){
+        grand_totals.push({ date, sheet, target_prod: f, actual_prod: h, waste_qty: j });
+        continue;
+      }
+    }
+
+    // Stoppage % table
+    for(const r of rowNums){
+      if(gcell(grid, r, 2) === 'Stoppage Description'){
+        for(let rr = r+1; rr <= maxRow; rr++){
+          const label = gcell(grid, rr, 2);
+          if(label === null) continue;
+          stoppages.push({ date, sheet, category: label,
+                            unit1_pct: gcell(grid, rr, 4), unit2_pct: gcell(grid, rr, 5) });
+          if(label === 'Total') break;
+        }
+        break;
+      }
+    }
+
+    // Electricity (Units Consumed block)
+    for(const r of rowNums){
+      const gval = gcell(grid, r, 7);
+      if(gval === 'Units Consumed  :' || gval === 'Units Consumed :'){
+        for(let rr = r; rr <= r+4; rr++){
+          const lbl = gcell(grid, rr, 7), val = gcell(grid, rr, 8);
+          if(lbl === 'EB' || lbl === 'Solar' || lbl === 'Total' || lbl === 'UKG'){
+            electricity.push({ date, sheet, label: lbl, value: val });
+          }
+        }
+        break;
+      }
+    }
+
+    // Waste Stock block (K/L/M)
+    for(const r of rowNums){
+      if(gcell(grid, r, 11) === 'Waste Stock'){
+        for(let rr = r+2; rr <= maxRow; rr++){
+          const cat = gcell(grid, rr, 11);
+          if(cat === null) break;
+          waste_stock.push({ date, sheet, category: cat,
+                              unit1_qty: gcell(grid, rr, 12), unit2_qty: gcell(grid, rr, 13) });
+        }
+        break;
+      }
+    }
+  }
+
+  return {
+    company_name: company_name || 'Production Dashboard',
+    items, unit_totals, grand_totals, stoppages, electricity, waste_stock,
+  };
+}
+
+/* ---------- Mirrors Python's build_payload() exactly ---------- */
+function round2(v, d){
+  if(v === null || v === undefined || isNaN(v)) return v;
+  const m = Math.pow(10, d);
+  return Math.round((v + Number.EPSILON) * m) / m;
+}
+
+function buildPayloadFromRaw(parsed){
+  const items = parsed.items, unit_totals = parsed.unit_totals, grand = parsed.grand_totals;
+  const stoppages = parsed.stoppages, elec = parsed.electricity;
+
+  const dates = [...new Set(grand.map(g => g.date))].sort();
+
+  const daily = {};
+  grand.forEach(g => { daily[g.date] = { target: g.target_prod, actual: g.actual_prod, waste: g.waste_qty }; });
+  Object.values(daily).forEach(v => {
+    v.efficiency = v.target ? round2(v.actual / v.target * 100, 2) : null;
+    v.waste_pct = v.actual ? round2(v.waste / v.actual * 100, 2) : null;
+  });
+
+  const unit_daily = {};
+  unit_totals.forEach(u => {
+    if(!unit_daily[u.date]) unit_daily[u.date] = {};
+    unit_daily[u.date][u.unit] = { target: u.target_prod, actual: u.actual_prod, waste: u.waste_qty, mcs: u.total_mcs };
+  });
+
+  const elec_daily = {};
+  elec.forEach(e => {
+    if(!elec_daily[e.date]) elec_daily[e.date] = {};
+    elec_daily[e.date][e.label] = e.value;
+  });
+
+  const stop_agg = {};
+  const by_date_cat = {};
+  const stoppage_by_date = {};
+  stoppages.forEach(s => {
+    if(s.category === 'TOTAL' || s.category === 'Total') return;
+    if(!stop_agg[s.category]) stop_agg[s.category] = { unit1: 0.0, unit2: 0.0 };
+    const a = stop_agg[s.category];
+    if(s.unit1_pct) a.unit1 += s.unit1_pct;
+    if(s.unit2_pct) a.unit2 += s.unit2_pct;
+    if(!by_date_cat[s.date]) by_date_cat[s.date] = {};
+    by_date_cat[s.date][s.category] = (s.unit1_pct || 0) + (s.unit2_pct || 0);
+    if(s.unit1_pct || s.unit2_pct){
+      if(!stoppage_by_date[s.date]) stoppage_by_date[s.date] = [];
+      stoppage_by_date[s.date].push({ category: s.category, unit1_pct: s.unit1_pct, unit2_pct: s.unit2_pct });
+    }
+  });
+
+  const top_reason = dates.map(dt => {
+    const cats = by_date_cat[dt];
+    if(cats && Object.keys(cats).length){
+      let bestK = null, bestV = -Infinity;
+      Object.entries(cats).forEach(([k,v]) => { if(v > bestV){ bestV = v; bestK = k; } });
+      return bestV > 0 ? bestK : '-';
+    }
+    return '-';
+  });
+
+  const pareto = Object.entries(stop_agg).sort((a,b) => (b[1].unit1+b[1].unit2) - (a[1].unit1+a[1].unit2));
+
+  const count_mix = {};
+  items.forEach(it => { if(it.actual_prod) count_mix[it.count] = (count_mix[it.count]||0) + it.actual_prod; });
+  const count_sorted = Object.entries(count_mix).sort((a,b) => b[1]-a[1]);
+
+  const item_by_date = {};
+  items.forEach(it => { if(!item_by_date[it.date]) item_by_date[it.date] = []; item_by_date[it.date].push(it); });
+
+  const waste_stock_by_date = {};
+  (parsed.waste_stock || []).forEach(w => {
+    if(!waste_stock_by_date[w.date]) waste_stock_by_date[w.date] = [];
+    waste_stock_by_date[w.date].push({ category: w.category, unit1_qty: w.unit1_qty, unit2_qty: w.unit2_qty });
+  });
+
+  const g = (dt, key) => (daily[dt] ? daily[dt][key] : undefined) ?? null;
+
+  return {
+    dates,
+    target: dates.map(dt => g(dt,'target')),
+    actual: dates.map(dt => g(dt,'actual')),
+    efficiency: dates.map(dt => g(dt,'efficiency')),
+    waste: dates.map(dt => g(dt,'waste')),
+    waste_pct: dates.map(dt => g(dt,'waste_pct')),
+    u1_actual: dates.map(dt => unit_daily[dt]?.['UNIT - 1']?.actual ?? null),
+    u2_actual: dates.map(dt => unit_daily[dt]?.['UNIT - 2']?.actual ?? null),
+    u1_target: dates.map(dt => unit_daily[dt]?.['UNIT - 1']?.target ?? null),
+    u2_target: dates.map(dt => unit_daily[dt]?.['UNIT - 2']?.target ?? null),
+    u1_mcs: dates.map(dt => unit_daily[dt]?.['UNIT - 1']?.mcs ?? null),
+    u2_mcs: dates.map(dt => unit_daily[dt]?.['UNIT - 2']?.mcs ?? null),
+    u1_waste: dates.map(dt => unit_daily[dt]?.['UNIT - 1']?.waste ?? null),
+    u2_waste: dates.map(dt => unit_daily[dt]?.['UNIT - 2']?.waste ?? null),
+    eb: dates.map(dt => elec_daily[dt]?.EB ?? null),
+    solar: dates.map(dt => elec_daily[dt]?.Solar ?? null),
+    ukg: dates.map(dt => elec_daily[dt]?.UKG ?? null),
+    top_reason,
+    pareto_labels: pareto.map(([k]) => k),
+    pareto_u1: pareto.map(([,v]) => round2(v.unit1, 2)),
+    pareto_u2: pareto.map(([,v]) => round2(v.unit2, 2)),
+    count_labels: count_sorted.map(([k]) => k),
+    count_values: count_sorted.map(([,v]) => round2(v, 1)),
+    item_by_date,
+    stoppage_by_date,
+    waste_stock_by_date,
+  };
+}
+
+let DATA = buildPayloadFromRaw(RAW);
+
+function fmt(n, d=0){ if(n===null||n===undefined||isNaN(n)) return '-'; return Number(n).toLocaleString('en-IN',{maximumFractionDigits:d, minimumFractionDigits:d}); }
+function shortDate(s){ const p=s.split('-'); return p[2]+'/'+p[1]; }
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function shortItemName(name){
+  if(!name) return name;
+  return String(name)
+    .replace(/Karded Warp/gi, '(KW)')
+    .replace(/Karded (Hoseiry|Hosiery)/gi, '(KH)')
+    .replace(/Combed Warp/gi, '(CW)')
+    .replace(/Combed (Hoseiry|Hosiery)/gi, '(CH)');
+}
+function svgTag(name, attrs, children){
+  let a = Object.entries(attrs||{}).map(([k,v])=>`${k}="${v}"`).join(' ');
+  return `<${name} ${a}>${children||''}</${name}>`;
+}
+function niceMax(v){
+  if(v<=0) return 10;
+  const mag = Math.pow(10, Math.floor(Math.log10(v)));
+  const n = v/mag;
+  let f;
+  if(n<=1) f=1; else if(n<=2) f=2; else if(n<=5) f=5; else f=10;
+  return f*mag;
+}
+function vlabel(x, y, text, rotate=0, anchor='middle', fontSize=null){
+  const xr = x.toFixed(1), yr = y.toFixed(1);
+  const transform = rotate ? `rotate(${rotate} ${xr} ${yr})` : '';
+  const style = fontSize ? `font-size:${fontSize}px` : '';
+  return svgTag('text', {x:xr, y:yr, 'text-anchor':anchor, class:'vlabel', transform, style}, esc(text));
+}
+
+function drawLineChart(containerId, opts){
+  const {labels, series, yMin=0, yMax, height=280, yFmt=(v)=>fmt(v), width=900} = opts;
+  const W = width, H = height, ML=54, MR=20, MT=16, MB=56;
+  const plotW = W-ML-MR, plotH = H-MT-MB;
+  let maxV = yMax !== undefined ? yMax : Math.max(...series.flatMap(s=>s.data.filter(v=>v!==null&&v!==undefined)));
+  let minV = yMin;
+  maxV = maxV * 1.08;
+  const n = labels.length;
+  const xStep = n>1 ? plotW/(n-1) : plotW;
+  const xOf = i => ML + i*xStep;
+  const yOf = v => MT + plotH - ((v-minV)/(maxV-minV))*plotH;
+
+  let grid = '';
+  const ticks = 5;
+  for(let t=0;t<=ticks;t++){
+    const v = minV + (maxV-minV)*t/ticks;
+    const y = yOf(v);
+    grid += svgTag('line',{x1:ML,y1:y.toFixed(1),x2:W-MR,y2:y.toFixed(1),class:'gridline'});
+    grid += svgTag('text',{x:ML-8,y:(y+3).toFixed(1),'text-anchor':'end'}, yFmt(v));
+  }
+  let xlabels = '';
+  const labelEvery = Math.ceil(n/12);
+  labels.forEach((l,i)=>{
+    if(i%labelEvery===0 || i===n-1){
+      xlabels += svgTag('text',{x:xOf(i).toFixed(1), y:H-MB+18, 'text-anchor':'middle'}, shortDate(l));
+    }
+  });
+
+  const labelRotate = n>8 ? -35 : 0;
+  const labelAnchor = labelRotate ? 'start' : 'middle';
+  let paths = '';
+  series.forEach(s=>{
+    let pts = [];
+    s.data.forEach((v,i)=>{ if(v!==null && v!==undefined) pts.push([xOf(i), yOf(v)]); });
+    if(pts.length===0) return;
+    let d = pts.map((p,idx)=> (idx===0?'M':'L')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+    if(s.fill){
+      const areaD = d + ` L${pts[pts.length-1][0].toFixed(1)} ${yOf(minV).toFixed(1)} L${pts[0][0].toFixed(1)} ${yOf(minV).toFixed(1)} Z`;
+      paths += svgTag('path',{d:areaD, fill:s.color, opacity:0.12, stroke:'none'});
+    }
+    paths += svgTag('path',{d, fill:'none', stroke:s.color, 'stroke-width':2, 'stroke-dasharray': s.dash?'6,4':'0'});
+    s.data.forEach((v,i)=>{
+      if(v===null||v===undefined) return;
+      paths += svgTag('circle',{cx:xOf(i).toFixed(1), cy:yOf(v).toFixed(1), r:2.6, fill:s.color},
+        svgTag('title',{}, `${labels[i]}: ${yFmt(v)}`));
+      if(s.showLabels !== false){
+        paths += vlabel(xOf(i), yOf(v)-9, yFmt(v), labelRotate, labelAnchor);
+      }
+    });
+  });
+
+  let legend = '';
+  series.forEach((s,i)=>{
+    const lx = ML + i*140;
+    legend += svgTag('rect',{x:lx, y:H-14, width:10, height:10, fill:s.color, rx:2});
+    legend += svgTag('text',{x:lx+15, y:H-5, class:'legend'}, esc(s.name));
+  });
+
+  const svg = svgTag('svg',{class:'chart', viewBox:`0 0 ${W} ${H+16}`, xmlns:'http://www.w3.org/2000/svg'},
+    svgTag('line',{x1:ML,y1:MT,x2:ML,y2:MT+plotH,class:'axisline'}) +
+    svgTag('line',{x1:ML,y1:MT+plotH,x2:W-MR,y2:MT+plotH,class:'axisline'}) +
+    grid + xlabels + paths + legend
+  );
+  document.getElementById(containerId).innerHTML = svg;
+}
+
+function drawBarChart(containerId, opts){
+  const {labels, series, stacked=false, height=280, yFmt=(v)=>fmt(v), xFmt=shortDate, width=900} = opts;
+  const W = width, H = height, ML=54, MR=20, MT=16, MB=56;
+  const plotW = W-ML-MR, plotH = H-MT-MB;
+  const n = labels.length;
+  let maxV;
+  if(stacked){
+    maxV = Math.max(...labels.map((l,i)=> series.reduce((sum,s)=> sum+(s.data[i]||0),0)));
+  } else {
+    maxV = Math.max(...series.flatMap(s=>s.data.map(v=>v||0)));
+  }
+  maxV = niceMax(maxV*1.05);
+  const yOf = v => MT + plotH - (v/maxV)*plotH;
+  const groupW = plotW/n;
+  const barPad = groupW*0.18;
+  const barsInGroup = stacked ? 1 : series.length;
+  const barW = (groupW - 2*barPad) / barsInGroup;
+
+  let grid='';
+  const ticks=5;
+  for(let t=0;t<=ticks;t++){
+    const v = maxV*t/ticks;
+    const y = yOf(v);
+    grid += svgTag('line',{x1:ML,y1:y.toFixed(1),x2:W-MR,y2:y.toFixed(1),class:'gridline'});
+    grid += svgTag('text',{x:ML-8,y:(y+3).toFixed(1),'text-anchor':'end'}, yFmt(v));
+  }
+  let xlabels='';
+  const labelEvery = Math.ceil(n/12);
+  labels.forEach((l,i)=>{
+    if(i%labelEvery===0 || i===n-1){
+      const cx = ML + i*groupW + groupW/2;
+      xlabels += svgTag('text',{x:cx.toFixed(1), y:H-MB+18, 'text-anchor':'middle'}, esc(xFmt(l)));
+    }
+  });
+
+  const barLabelRotate = n>8 ? -35 : 0;
+  const barLabelAnchor = barLabelRotate ? 'start' : 'middle';
+  let bars='';
+  labels.forEach((l,i)=>{
+    let stackBase = 0;
+    series.forEach((s,si)=>{
+      const v = s.data[i]||0;
+      if(v===0) return;
+      let x, y, h;
+      if(stacked){
+        x = ML + i*groupW + barPad;
+        y = yOf(stackBase+v);
+        h = yOf(stackBase) - yOf(stackBase+v);
+        stackBase += v;
+      } else {
+        x = ML + i*groupW + barPad + si*barW;
+        y = yOf(v);
+        h = yOf(0)-yOf(v);
+      }
+      bars += svgTag('rect',{x:x.toFixed(1), y:y.toFixed(1), width:Math.max(barW-2,1).toFixed(1), height:Math.max(h,0).toFixed(1), fill:s.color, rx:2},
+        svgTag('title',{}, `${esc(l)} · ${esc(s.name)}: ${yFmt(v)}`));
+      if(!stacked){
+        const cx = x + Math.max(barW-2,1)/2;
+        bars += vlabel(cx, y-8, yFmt(v), barLabelRotate, barLabelAnchor);
+      }
+    });
+    if(stacked && stackBase>0){
+      const cx = ML + i*groupW + barPad + (groupW-2*barPad)/2;
+      bars += vlabel(cx, yOf(stackBase)-8, yFmt(stackBase), barLabelRotate, barLabelAnchor);
+    }
+  });
+
+  let legend='';
+  series.forEach((s,i)=>{
+    const lx = ML + i*140;
+    legend += svgTag('rect',{x:lx, y:H-14, width:10, height:10, fill:s.color, rx:2});
+    legend += svgTag('text',{x:lx+15, y:H-5, class:'legend'}, esc(s.name));
+  });
+
+  const svg = svgTag('svg',{class:'chart', viewBox:`0 0 ${W} ${H+16}`, xmlns:'http://www.w3.org/2000/svg'},
+    svgTag('line',{x1:ML,y1:MT,x2:ML,y2:MT+plotH,class:'axisline'}) +
+    svgTag('line',{x1:ML,y1:MT+plotH,x2:W-MR,y2:MT+plotH,class:'axisline'}) +
+    grid + xlabels + bars + legend
+  );
+  document.getElementById(containerId).innerHTML = svg;
+}
+
+function drawHBarChart(containerId, opts){
+  const {labels, series, stacked=false, height, yFmt=(v)=>fmt(v), valueLabelSize=null, yLabelSize=null, width=900} = opts;
+  const n = labels.length;
+  const rowH = 26;
+  const MT_h=10, MB_h=50;
+  const H = height || (n*rowH + MT_h + MB_h);
+  const W = width, ML=195, MR=60, MT=MT_h, MB=MB_h;
+  const plotW = W-ML-MR, plotH = H-MT-MB;
+  let maxV;
+  if(stacked){
+    maxV = Math.max(...labels.map((l,i)=> series.reduce((sum,s)=> sum+(s.data[i]||0),0)));
+  } else {
+    maxV = Math.max(...series.flatMap(s=>s.data.map(v=>v||0)));
+  }
+  maxV = niceMax(maxV*1.05);
+  const xOf = v => ML + (v/maxV)*plotW;
+  const groupH = plotH/n;
+  const barPad = groupH*0.2;
+  const barsInGroup = stacked ? 1 : series.length;
+  const barH = (groupH - 2*barPad) / barsInGroup;
+
+  let grid='';
+  const ticks=4;
+  for(let t=0;t<=ticks;t++){
+    const v = maxV*t/ticks;
+    const x = xOf(v);
+    grid += svgTag('line',{x1:x.toFixed(1),y1:MT,x2:x.toFixed(1),y2:MT+plotH,class:'gridline'});
+    grid += svgTag('text',{x:x.toFixed(1),y:MT+plotH+16,'text-anchor':'middle'}, yFmt(v));
+  }
+  let ylabels='';
+  const yLabelStyle = yLabelSize ? `font-size:${yLabelSize}px` : '';
+  labels.forEach((l,i)=>{
+    const cy = MT + i*groupH + groupH/2;
+    ylabels += svgTag('text',{x:ML-8, y:(cy+3).toFixed(1), 'text-anchor':'end', class:'ylabel', style:yLabelStyle}, esc(l));
+  });
+
+  let bars='';
+  labels.forEach((l,i)=>{
+    let stackBase=0;
+    series.forEach((s,si)=>{
+      const v = s.data[i]||0;
+      if(v===0) return;
+      let x,y,w;
+      if(stacked){
+        x = xOf(stackBase);
+        w = xOf(stackBase+v)-xOf(stackBase);
+        y = MT + i*groupH + barPad;
+        stackBase += v;
+      } else {
+        x = ML;
+        w = xOf(v)-ML;
+        y = MT + i*groupH + barPad + si*barH;
+      }
+      bars += svgTag('rect',{x:x.toFixed(1), y:y.toFixed(1), width:Math.max(w,0).toFixed(1), height:Math.max(barH-2,1).toFixed(1), fill:s.color, rx:2},
+        svgTag('title',{}, `${esc(l)} · ${esc(s.name)}: ${yFmt(v)}`));
+      if(!stacked){
+        const ty = y + Math.max(barH-2,1)/2 + 4;
+        bars += vlabel(x+w+6, ty, yFmt(v), 0, 'start', valueLabelSize);
+      }
+    });
+    if(stacked && stackBase>0){
+      const ty = MT + i*groupH + barPad + (groupH-2*barPad)/2 + 4;
+      bars += vlabel(xOf(stackBase)+6, ty, yFmt(stackBase), 0, 'start', valueLabelSize);
+    }
+  });
+
+  let legend='';
+  series.forEach((s,i)=>{
+    const lx = ML + i*140;
+    legend += svgTag('rect',{x:lx, y:H-14, width:10, height:10, fill:s.color, rx:2});
+    legend += svgTag('text',{x:lx+15, y:H-5, class:'legend'}, esc(s.name));
+  });
+
+  const svg = svgTag('svg',{class:'chart', viewBox:`0 0 ${W} ${H+16}`, xmlns:'http://www.w3.org/2000/svg'},
+    svgTag('line',{x1:ML,y1:MT,x2:ML,y2:MT+plotH,class:'axisline'}) +
+    svgTag('line',{x1:ML,y1:MT+plotH,x2:W-MR,y2:MT+plotH,class:'axisline'}) +
+    grid + ylabels + bars + (series.length>1?legend:'')
+  );
+  document.getElementById(containerId).innerHTML = svg;
+}
+
+function drawComboChart(containerId, opts){
+  const {labels, bar, line, height=280, barFmt=(v)=>fmt(v), lineFmt=(v)=>fmt(v,1), lineMin=0, lineMax, showLineLabels=true, width=900, xFmt=shortDate} = opts;
+  const W = width, H = height, ML=54, MR=54, MT=16, MB=56;
+  const plotW = W-ML-MR, plotH = H-MT-MB;
+  const n = labels.length;
+  let maxBar = niceMax(Math.max(...bar.data.map(v=>v||0))*1.1);
+  let maxLine = lineMax !== undefined ? lineMax : Math.max(...line.data.filter(v=>v!==null&&v!==undefined))*1.1;
+  const yBar = v => MT + plotH - (v/maxBar)*plotH;
+  const yLine = v => MT + plotH - ((v-lineMin)/(maxLine-lineMin))*plotH;
+  const groupW = plotW/n;
+  const barW = groupW*0.55;
+
+  let grid='';
+  const ticks=5;
+  for(let t=0;t<=ticks;t++){
+    const vB = maxBar*t/ticks;
+    const y = yBar(vB);
+    grid += svgTag('line',{x1:ML,y1:y.toFixed(1),x2:W-MR,y2:y.toFixed(1),class:'gridline'});
+    grid += svgTag('text',{x:ML-8,y:(y+3).toFixed(1),'text-anchor':'end'}, barFmt(vB));
+    const vL = lineMin + (maxLine-lineMin)*t/ticks;
+    grid += svgTag('text',{x:W-MR+8,y:(y+3).toFixed(1)}, lineFmt(vL));
+  }
+  let xlabels='';
+  const labelEvery = Math.ceil(n/12);
+  labels.forEach((l,i)=>{
+    if(i%labelEvery===0 || i===n-1){
+      const cx = ML + i*groupW + groupW/2;
+      xlabels += svgTag('text',{x:cx.toFixed(1), y:H-MB+18, 'text-anchor':'middle'}, esc(xFmt(l)));
+    }
+  });
+
+  const comboLabelRotate = n>8 ? -35 : 0;
+  const comboLabelAnchor = comboLabelRotate ? 'start' : 'middle';
+  let bars='';
+  bar.data.forEach((v,i)=>{
+    if(v===null||v===undefined) return;
+    const x = ML + i*groupW + (groupW-barW)/2;
+    const y = yBar(v);
+    const h = yBar(0)-y;
+    bars += svgTag('rect',{x:x.toFixed(1), y:y.toFixed(1), width:barW.toFixed(1), height:Math.max(h,0).toFixed(1), fill:bar.color, rx:2},
+      svgTag('title',{}, `${labels[i]} · ${esc(bar.name)}: ${barFmt(v)}`));
+    if(bar.name){
+      bars += vlabel(x+barW/2, y-8, barFmt(v), comboLabelRotate, comboLabelAnchor);
+    }
+  });
+
+  let pts=[];
+  line.data.forEach((v,i)=>{ if(v!==null&&v!==undefined) pts.push([ML+i*groupW+groupW/2, yLine(v)]); });
+  let linePath = pts.length ? 'M'+pts.map(p=>p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' L') : '';
+  let lineSvg = linePath ? svgTag('path',{d:linePath, fill:'none', stroke:line.color, 'stroke-width':2}) : '';
+  let dots='';
+  line.data.forEach((v,i)=>{
+    if(v===null||v===undefined) return;
+    const cx = ML+i*groupW+groupW/2, cy = yLine(v);
+    dots += svgTag('circle',{cx:cx.toFixed(1), cy:cy.toFixed(1), r:2.6, fill:line.color},
+      svgTag('title',{}, `${labels[i]} · ${esc(line.name)}: ${lineFmt(v)}`));
+    if(showLineLabels){
+      dots += vlabel(cx, cy-9, lineFmt(v), comboLabelRotate, comboLabelAnchor);
+    }
+  });
+
+  let legend = svgTag('rect',{x:ML, y:H-14, width:10, height:10, fill:bar.color, rx:2}) +
+    svgTag('text',{x:ML+15, y:H-5, class:'legend'}, esc(bar.name)) +
+    svgTag('rect',{x:ML+150, y:H-14, width:10, height:10, fill:line.color, rx:2}) +
+    svgTag('text',{x:ML+165, y:H-5, class:'legend'}, esc(line.name));
+
+  const svg = svgTag('svg',{class:'chart', viewBox:`0 0 ${W} ${H+16}`, xmlns:'http://www.w3.org/2000/svg'},
+    svgTag('line',{x1:ML,y1:MT,x2:ML,y2:MT+plotH,class:'axisline'}) +
+    svgTag('line',{x1:W-MR,y1:MT,x2:W-MR,y2:MT+plotH,class:'axisline'}) +
+    svgTag('line',{x1:ML,y1:MT+plotH,x2:W-MR,y2:MT+plotH,class:'axisline'}) +
+    grid + xlabels + bars + lineSvg + dots + legend
+  );
+  document.getElementById(containerId).innerHTML = svg;
+}
+
+function monthOf(dateStr){ return dateStr.slice(0,7); }
+function monthLabel(m){
+  const parts = m.split('-'); const y = parts[0], mm = parts[1];
+  const names=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const n = names[parseInt(mm,10)-1];
+  return n ? (n+' '+y) : m;
+}
+
+// Builds an overview-tab "view" (same shape DATA uses for the overview charts)
+// restricted to a single YYYY-MM month, or returns DATA unchanged for 'all'.
+function computeOverviewView(month){
+  if(!month || month === 'all') return DATA;
+  const idxs = [];
+  DATA.dates.forEach((d,i)=>{ if(monthOf(d)===month) idxs.push(i); });
+  const pick = (arr)=> idxs.map(i=>arr[i]);
+  const items = (RAW.items||[]).filter(it => it.date && monthOf(it.date)===month);
+  const count_mix = {};
+  items.forEach(it=>{ if(it.actual_prod) count_mix[it.count] = (count_mix[it.count]||0) + it.actual_prod; });
+  const count_sorted = Object.entries(count_mix).sort((a,b)=>b[1]-a[1]);
+  return {
+    dates: pick(DATA.dates), target: pick(DATA.target), actual: pick(DATA.actual),
+    efficiency: pick(DATA.efficiency), waste: pick(DATA.waste), waste_pct: pick(DATA.waste_pct),
+    u1_actual: pick(DATA.u1_actual), u2_actual: pick(DATA.u2_actual),
+    eb: pick(DATA.eb), solar: pick(DATA.solar), ukg: pick(DATA.ukg),
+    count_labels: count_sorted.map(([k])=>k),
+    count_values: count_sorted.map(([,v])=>round2(v,1)),
+  };
+}
+
+let overviewMonth = 'all';
+
+function renderOverviewTab(){
+  const sel = document.getElementById('overviewMonthFilter');
+  const months = [...new Set(DATA.dates.map(monthOf))].sort();
+  if(!months.includes(overviewMonth)) overviewMonth = 'all';
+  sel.innerHTML = '<option value="all">All Months</option>' + months.map(m=>`<option value="${m}">${monthLabel(m)}</option>`).join('');
+  sel.value = overviewMonth;
+  const view = computeOverviewView(overviewMonth);
+  renderKpiRow(view);
+  renderOverviewCharts(view);
+}
+
+function renderKpiRow(view){
+  view = view || DATA;
+  const noData = view.dates.length === 0;
+  const totalActual = view.actual.reduce((a,b)=>a+(b||0),0);
+  const totalTarget = view.target.reduce((a,b)=>a+(b||0),0);
+  const totalWaste = view.waste.reduce((a,b)=>a+(b||0),0);
+  const eff = totalTarget ? totalActual/totalTarget*100 : 0;
+  const wastePct = totalActual ? totalWaste/totalActual*100 : 0;
+  const avgDaily = view.dates.length ? totalActual/view.dates.length : 0;
+  const totalEB = view.eb.reduce((a,b)=>a+(b||0),0);
+
+  const effClass = eff>=95?'good':eff>=85?'warn':'bad';
+  const wasteClass = wastePct<=3?'good':wastePct<=4.5?'warn':'bad';
+
+  const kpis = [
+    {label:'Total Actual Production', value: noData?'-':fmt(totalActual)+' kg'},
+    {label:'Total Target Production', value: noData?'-':fmt(totalTarget)+' kg'},
+    {label:'Overall Efficiency', value: noData?'-':fmt(eff,1)+'%', cls:noData?'':effClass},
+    {label:'Total Waste', value: noData?'-':fmt(totalWaste)+' kg', cls:noData?'':wasteClass},
+    {label:'Waste Rate', value: noData?'-':fmt(wastePct,2)+'%', cls:noData?'':wasteClass},
+    {label:'Avg Daily Output', value: noData?'-':fmt(avgDaily)+' kg'},
+    {label:'Total EB Units', value: noData?'-':fmt(totalEB)},
+    {label:'Days Covered', value: view.dates.length + ' days'},
+  ];
+  document.getElementById('kpi-row').innerHTML = kpis.map(k=>`<div class="kpi"><div class="label">${k.label}</div><div class="value ${k.cls||''}">${k.value}</div></div>`).join('');
+}
+
+function renderOverviewCharts(view){
+  view = view || DATA;
+  if(view.dates.length === 0){
+    ['chartTrend','chartEff','chartUnits','chartWaste','chartMix'].forEach(id=>{
+      document.getElementById(id).innerHTML = '<div class="note">No data for this selection. Try "All Months" or upload a workbook in the Manage Data tab.</div>';
+    });
+    return;
+  }
+  drawLineChart('chartTrend', { labels: view.dates, width:620, series: [
+    {name:'Target', data:view.target, color:COLORS.muted, dash:true, showLabels:false},
+    {name:'Actual', data:view.actual, color:COLORS.accent, fill:true},
+  ]});
+  drawLineChart('chartEff', { labels: view.dates, width:620, series: [ {name:'Efficiency %', data:view.efficiency, color:COLORS.accent2, fill:true} ], yMin:60, yMax:100, yFmt:(v)=>v.toFixed(0)+'%' });
+  drawBarChart('chartUnits', { labels: view.dates, width:620, series: [ {name:'Unit 1', data:view.u1_actual, color:COLORS.accent}, {name:'Unit 2', data:view.u2_actual, color:COLORS.accent2} ], stacked:true });
+  drawComboChart('chartWaste', { labels: view.dates, width:620, bar: {name:'Waste (kg)', data:view.waste, color:COLORS.warn}, line: {name:'Waste %', data:view.waste_pct, color:COLORS.bad}, lineFmt:(v)=>v.toFixed(1)+'%', showLineLabels:false });
+  if(view.count_labels.length){
+    drawHBarChart('chartMix', { labels: view.count_labels, width:1300, series: [ {name:'Actual Production (kg)', data:view.count_values, color:COLORS.accent} ], height: 260 });
+  } else {
+    document.getElementById('chartMix').innerHTML = '<div class="note">No item-level data for this selection.</div>';
+  }
+}
+
+// ---------- Yearly Overview tab ----------
+function computeMonthlyRollup(){
+  const months = [...new Set(DATA.dates.map(monthOf))].sort();
+  return months.map(m=>{
+    const idxs = []; DATA.dates.forEach((d,i)=>{ if(monthOf(d)===m) idxs.push(i); });
+    const sum = (arr)=> idxs.reduce((s,i)=> s+(arr[i]||0), 0);
+    const target = sum(DATA.target), actual = sum(DATA.actual), waste = sum(DATA.waste);
+    return {
+      month: m, target, actual, waste,
+      efficiency: target ? round2(actual/target*100, 2) : null,
+      waste_pct: actual ? round2(waste/actual*100, 2) : null,
+      days: idxs.length,
+    };
+  });
+}
+
+function renderYearlyTab(){
+  const rollup = computeMonthlyRollup();
+  const noData = rollup.length === 0;
+  const totalActual = rollup.reduce((a,r)=>a+r.actual,0);
+  const totalTarget = rollup.reduce((a,r)=>a+r.target,0);
+  const totalWaste = rollup.reduce((a,r)=>a+r.waste,0);
+  const eff = totalTarget ? totalActual/totalTarget*100 : 0;
+  const wastePct = totalActual ? totalWaste/totalActual*100 : 0;
+  const effClass = eff>=95?'good':eff>=85?'warn':'bad';
+  const wasteClass = wastePct<=3?'good':wastePct<=4.5?'warn':'bad';
+
+  const kpis = [
+    {label:'Total Actual Production', value: noData?'-':fmt(totalActual)+' kg'},
+    {label:'Total Target Production', value: noData?'-':fmt(totalTarget)+' kg'},
+    {label:'Overall Efficiency', value: noData?'-':fmt(eff,1)+'%', cls:noData?'':effClass},
+    {label:'Total Waste', value: noData?'-':fmt(totalWaste)+' kg', cls:noData?'':wasteClass},
+    {label:'Waste Rate', value: noData?'-':fmt(wastePct,2)+'%', cls:noData?'':wasteClass},
+    {label:'Months Covered', value: rollup.length + ' month' + (rollup.length===1?'':'s')},
+  ];
+  document.getElementById('yearly-kpi-row').innerHTML = kpis.map(k=>`<div class="kpi"><div class="label">${k.label}</div><div class="value ${k.cls||''}">${k.value}</div></div>`).join('');
+
+  if(noData){
+    document.getElementById('chartYearlyProd').innerHTML = '<div class="note">No data loaded. Upload a workbook in the Manage Data tab.</div>';
+    document.getElementById('yearlyTbody').innerHTML = '<tr><td colspan="7" class="note">No data loaded.</td></tr>';
+    return;
+  }
+
+  drawComboChart('chartYearlyProd', {
+    labels: rollup.map(r=>r.month), width:1300,
+    bar: {name:'Actual Production (kg)', data: rollup.map(r=>r.actual), color:COLORS.accent},
+    line: {name:'Efficiency %', data: rollup.map(r=>r.efficiency), color:COLORS.accent2},
+    lineFmt:(v)=>v.toFixed(1)+'%', xFmt: monthLabel,
+  });
+
+  document.getElementById('yearlyTbody').innerHTML = rollup.map(r=>`
+    <tr>
+      <td>${monthLabel(r.month)}</td><td>${fmt(r.target)}</td><td>${fmt(r.actual)}</td>
+      <td>${effPill(r.efficiency)}</td><td>${fmt(r.waste)}</td><td>${fmt(r.waste_pct,2)}%</td><td>${r.days}</td>
+    </tr>`).join('');
+}
+
+function renderHeatmap(){
+  const grid = document.getElementById('heatGrid');
+  if(DATA.dates.length === 0){
+    grid.innerHTML = '<div class="note">No data loaded.</div>';
+    return;
+  }
+  grid.innerHTML = DATA.dates.map((dt,i)=>{
+    const e = DATA.efficiency[i];
+    let color = '#3a4568';
+    if(e!==null && e!==undefined){
+      if(e>=95) color = 'rgba(57,208,182,.35)';
+      else if(e>=85) color = 'rgba(255,182,72,.30)';
+      else color = 'rgba(255,93,108,.30)';
+    }
+    return `<div class="heat-cell" style="background:${color}" data-date="${dt}"><div class="d">${shortDate(dt)}</div><div class="e">${e!==null?e.toFixed(1)+'%':'-'}</div></div>`;
+  }).join('');
+  grid.querySelectorAll('.heat-cell').forEach(c=>c.addEventListener('click', ()=>openDay(c.dataset.date)));
+}
+
+let rows = [];
+function rebuildRows(){
+  rows = DATA.dates.map((dt,i)=>({
+    date: dt, target: DATA.target[i], actual: DATA.actual[i], efficiency: DATA.efficiency[i],
+    waste: DATA.waste[i], waste_pct: DATA.waste_pct[i], u1_actual: DATA.u1_actual[i], u2_actual: DATA.u2_actual[i],
+    eb: DATA.eb[i], top_reason: DATA.top_reason[i]
+  }));
+}
+
+function effPill(e){
+  if(e===null||e===undefined) return '-';
+  const cls = e>=95?'good':e>=85?'warn':'bad';
+  return `<span class="pill ${cls}">${e.toFixed(1)}%</span>`;
+}
+
+function renderTable(){
+  const tbody = document.getElementById('dailyTbody');
+  if(rows.length === 0){
+    tbody.innerHTML = '<tr><td colspan="10" class="note">No data loaded. Upload a workbook in the Manage Data tab.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(r=>`
+    <tr data-date="${r.date}">
+      <td>${shortDate(r.date)}</td><td>${fmt(r.target)}</td><td>${fmt(r.actual)}</td>
+      <td>${effPill(r.efficiency)}</td><td>${fmt(r.waste)}</td><td>${fmt(r.waste_pct,2)}%</td>
+      <td>${fmt(r.u1_actual)}</td><td>${fmt(r.u2_actual)}</td><td>${fmt(r.eb)}</td><td>${esc(r.top_reason)}</td>
+    </tr>`).join('');
+  tbody.querySelectorAll('tr').forEach(tr=>tr.addEventListener('click', ()=>openDay(tr.dataset.date)));
+}
+
+let sortDir = {};
+document.querySelectorAll('#dailyTable th').forEach(th=>{
+  th.addEventListener('click', ()=>{
+    const k = th.dataset.k;
+    sortDir[k] = !sortDir[k];
+    rows.sort((a,b)=>{
+      let va=a[k], vb=b[k];
+      if(typeof va === 'string') return sortDir[k] ? va.localeCompare(vb) : vb.localeCompare(va);
+      va = va===null?-Infinity:va; vb = vb===null?-Infinity:vb;
+      return sortDir[k] ? va-vb : vb-va;
+    });
+    renderTable();
+  });
+});
+
+function openDay(date){
+  const items = DATA.item_by_date[date] || [];
+  document.getElementById('modalTitle').textContent = 'Item-level production — ' + date;
+  let html = '<table><thead><tr><th>Unit</th><th>Item</th><th>Mcs</th><th>Count</th><th>Target</th><th>Actual</th><th>Waste</th></tr></thead><tbody>';
+  items.forEach(it=>{
+    html += `<tr><td>${esc(it.unit||'-')}</td><td>${esc(shortItemName(it.item))}</td><td>${fmt(it.no_of_mcs,1)}</td><td>${esc(it.count)}</td><td>${fmt(it.target_prod)}</td><td>${fmt(it.actual_prod)}</td><td>${fmt(it.waste_qty)}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modalBg').classList.add('active');
+}
+document.getElementById('modalClose').addEventListener('click', ()=>document.getElementById('modalBg').classList.remove('active'));
+document.getElementById('modalBg').addEventListener('click', (e)=>{ if(e.target.id==='modalBg') e.currentTarget.classList.remove('active'); });
+
+// ---------- Daily Report tab ----------
+let dayIdx = 0;
+
+function kpiCard(label, value, cls){
+  return `<div class="kpi"><div class="label">${label}</div><div class="value ${cls||''}">${value}</div></div>`;
+}
+
+function initDailyReportTab(){
+  const sel = document.getElementById('dateSelect');
+  sel.innerHTML = DATA.dates.map(dt=>`<option value="${dt}">${dt}</option>`).join('');
+  dayIdx = DATA.dates.length ? DATA.dates.length - 1 : 0;
+  renderDay();
+}
+
+function renderDay(){
+  const sel = document.getElementById('dateSelect');
+  if(DATA.dates.length === 0){
+    sel.value = '';
+    document.getElementById('dayLabel').textContent = 'No data loaded';
+    document.getElementById('dayPrev').disabled = true;
+    document.getElementById('dayNext').disabled = true;
+    document.getElementById('dayKpiProd').innerHTML = '<div class="note">Upload a workbook in the Manage Data tab.</div>';
+    document.getElementById('dayKpiStoppage').innerHTML = '';
+    document.getElementById('dayKpiWaste').innerHTML = '';
+    document.getElementById('dayUtilRow').innerHTML = '';
+    document.getElementById('chartDayItems').innerHTML = '';
+    document.getElementById('dayProductTbody').innerHTML = '<tr><td colspan="7" class="note">No data loaded.</td></tr>';
+    document.getElementById('chartDayUnits').innerHTML = '';
+    document.getElementById('dayWasteTbody').innerHTML = '<tr><td colspan="4" class="note">No data loaded.</td></tr>';
+    document.getElementById('chartDayStoppage').innerHTML = '';
+    return;
+  }
+  {
+    const idx = dayIdx;
+    const date = DATA.dates[idx];
+    sel.value = date;
+    document.getElementById('dayLabel').textContent = `Day ${idx+1} of ${DATA.dates.length}`;
+    document.getElementById('dayPrev').disabled = idx===0;
+    document.getElementById('dayNext').disabled = idx===DATA.dates.length-1;
+
+    const target = DATA.target[idx], actual = DATA.actual[idx], eff = DATA.efficiency[idx];
+    const waste = DATA.waste[idx], wastePct = DATA.waste_pct[idx];
+    const u1a = DATA.u1_actual[idx], u2a = DATA.u2_actual[idx];
+    const u1t = DATA.u1_target[idx], u2t = DATA.u2_target[idx];
+    const u1w = DATA.u1_waste[idx], u2w = DATA.u2_waste[idx];
+    const eb = DATA.eb[idx], solar = DATA.solar[idx], ukg = DATA.ukg[idx];
+
+    const effClass = (eff!==null&&eff!==undefined) ? (eff>=95?'good':eff>=85?'warn':'bad') : '';
+    const wasteClass = (wastePct!==null&&wastePct!==undefined) ? (wastePct<=3?'good':wastePct<=4.5?'warn':'bad') : '';
+
+    document.getElementById('dayKpiProd').innerHTML =
+      kpiCard('Target Production', fmt(target)+' kg') +
+      kpiCard('Actual Production', fmt(actual)+' kg') +
+      kpiCard('Efficiency', fmt(eff,1)+'%', effClass);
+
+    const stopsForDay = DATA.stoppage_by_date[date] || [];
+    let u1Top = null, u2Top = null;
+    stopsForDay.forEach(s=>{
+      if(s.unit1_pct && (u1Top===null || s.unit1_pct > u1Top.val)) u1Top = {cat:s.category, val:s.unit1_pct};
+      if(s.unit2_pct && (u2Top===null || s.unit2_pct > u2Top.val)) u2Top = {cat:s.category, val:s.unit2_pct};
+    });
+    document.getElementById('dayKpiStoppage').innerHTML =
+      kpiCard('Unit 1 Top Reason', u1Top ? `${esc(u1Top.cat)} (${u1Top.val.toFixed(2)}%)` : '-') +
+      kpiCard('Unit 2 Top Reason', u2Top ? `${esc(u2Top.cat)} (${u2Top.val.toFixed(2)}%)` : '-');
+
+    document.getElementById('dayKpiWaste').innerHTML =
+      kpiCard('Waste', fmt(waste)+' kg', wasteClass) +
+      kpiCard('Waste Rate', fmt(wastePct,2)+'%', wasteClass);
+
+    document.getElementById('dayUtilRow').innerHTML =
+      kpiCard('EB Units', fmt(eb)) +
+      kpiCard('Solar Units', fmt(solar)) +
+      kpiCard('Units / Kg', (ukg!==null&&ukg!==undefined)?fmt(ukg,2):'-') +
+      kpiCard('Unit 1 Waste', fmt(u1w)+' kg') +
+      kpiCard('Unit 2 Waste', fmt(u2w)+' kg');
+
+    const items = (DATA.item_by_date[date]||[]).filter(it=>it.target_prod!==null && it.target_prod!==undefined);
+    // Group Unit 1 first (drawn at top) then Unit 2 (drawn at bottom); within each
+    // unit, sort ascending by actual production.
+    const u1Sorted = items.filter(it=>it.unit==='UNIT - 1').sort((a,b)=>(a.actual_prod||0)-(b.actual_prod||0));
+    const u2Sorted = items.filter(it=>it.unit==='UNIT - 2').sort((a,b)=>(a.actual_prod||0)-(b.actual_prod||0));
+    const otherSorted = items.filter(it=>it.unit!=='UNIT - 1' && it.unit!=='UNIT - 2').sort((a,b)=>(a.actual_prod||0)-(b.actual_prod||0));
+    const sortedItems = [...u1Sorted, ...u2Sorted, ...otherSorted];
+    if(sortedItems.length){
+      drawHBarChart('chartDayItems', {
+        labels: sortedItems.map(it=> `${shortItemName(it.item)} (${it.unit==='UNIT - 1'?'U1':(it.unit==='UNIT - 2'?'U2':'-')})`),
+        series: [
+          {name:'Target', data: sortedItems.map(it=>it.target_prod||0), color:COLORS.muted},
+          {name:'Actual', data: sortedItems.map(it=>it.actual_prod||0), color:COLORS.accent},
+        ],
+        stacked:false,
+        height: Math.max(sortedItems.length*34+40, 160),
+        width: 1300
+      });
+    } else {
+      document.getElementById('chartDayItems').innerHTML = '<div class="note">No item-level data for this date.</div>';
+    }
+
+    const productTbody = document.getElementById('dayProductTbody');
+    if(items.length){
+      productTbody.innerHTML = items.map(it=>{
+        const itEff = (it.target_prod && it.actual_prod!==null && it.actual_prod!==undefined) ? (it.actual_prod/it.target_prod*100) : null;
+        return `<tr>
+          <td>${it.unit==='UNIT - 1'?'Unit 1':(it.unit==='UNIT - 2'?'Unit 2':(it.unit||'-'))}</td>
+          <td>${esc(shortItemName(it.item))} (${esc(it.count)})</td>
+          <td>${fmt(it.no_of_mcs,1)}</td>
+          <td>${fmt(it.target_prod)}</td>
+          <td>${fmt(it.actual_prod)}</td>
+          <td>${itEff!==null?effPill(itEff):'-'}</td>
+          <td>${fmt(it.waste_qty)}</td>
+        </tr>`;
+      }).join('');
+    } else {
+      productTbody.innerHTML = '<tr><td colspan="7" class="note">No product-level data for this date.</td></tr>';
+    }
+
+    const wasteRows = [...(DATA.waste_stock_by_date[date]||[])].sort((a,b)=>{
+      const ta = (a.unit1_qty||0)+(a.unit2_qty||0);
+      const tb = (b.unit1_qty||0)+(b.unit2_qty||0);
+      return tb-ta;
+    });
+    const wasteTbody = document.getElementById('dayWasteTbody');
+    if(wasteRows.length){
+      let u1Total=0, u2Total=0;
+      let rowsHtml = wasteRows.map(w=>{
+        const u1 = w.unit1_qty||0, u2 = w.unit2_qty||0;
+        u1Total += u1; u2Total += u2;
+        const hasAny = (w.unit1_qty!==null && w.unit1_qty!==undefined) || (w.unit2_qty!==null && w.unit2_qty!==undefined);
+        return `<tr><td>${esc(w.category)}</td><td>${fmt(w.unit1_qty)}</td><td>${fmt(w.unit2_qty)}</td><td>${hasAny?fmt(u1+u2):'-'}</td></tr>`;
+      }).join('');
+      rowsHtml += `<tr style="font-weight:700;"><td>Total</td><td>${fmt(u1Total)}</td><td>${fmt(u2Total)}</td><td>${fmt(u1Total+u2Total)}</td></tr>`;
+      wasteTbody.innerHTML = rowsHtml;
+    } else {
+      wasteTbody.innerHTML = '<tr><td colspan="4" class="note">No waste-type data for this date.</td></tr>';
+    }
+
+    drawBarChart('chartDayUnits', {
+      labels: ['Unit 1','Unit 2'],
+      series: [
+        {name:'Target', data:[u1t||0, u2t||0], color:COLORS.muted},
+        {name:'Actual', data:[u1a||0, u2a||0], color:COLORS.accent},
+      ],
+      stacked:false,
+      height: 340,
+      width: 1300,
+      xFmt: (l)=>l
+    });
+
+    const stops = (DATA.stoppage_by_date[date]||[]);
+    if(stops.length){
+      drawHBarChart('chartDayStoppage', {
+        labels: stops.map(s=>s.category),
+        series: [
+          {name:'Unit 1 %', data: stops.map(s=>s.unit1_pct||0), color:COLORS.accent},
+          {name:'Unit 2 %', data: stops.map(s=>s.unit2_pct||0), color:COLORS.accent2},
+        ],
+        stacked:false,
+        height: Math.max(stops.length*38+60, 220),
+        width: 1300,
+        yFmt:(v)=>v.toFixed(2)+'%'
+      });
+    } else {
+      document.getElementById('chartDayStoppage').innerHTML = '<div class="note">No stoppage recorded for this date.</div>';
+    }
+  }
+}
+
+document.getElementById('dateSelect').addEventListener('change', (e)=>{ dayIdx = DATA.dates.indexOf(e.target.value); renderDay(); });
+document.getElementById('dayPrev').addEventListener('click', ()=>{ if(dayIdx>0){ dayIdx--; renderDay(); } });
+document.getElementById('dayNext').addEventListener('click', ()=>{ if(dayIdx<DATA.dates.length-1){ dayIdx++; renderDay(); } });
+
+// ---------- Monthly Stoppage & Usage Summary tab ----------
+function renderStoppageTab(){
+  if(DATA.dates.length === 0){
+    ['chartPareto','chartElec','chartUkg'].forEach(id=>{
+      document.getElementById(id).innerHTML = '<div class="note">No data loaded. Upload a workbook in the Manage Data tab.</div>';
+    });
+    return;
+  }
+  if(DATA.pareto_labels.length){
+    drawHBarChart('chartPareto', { labels: DATA.pareto_labels, width:1300, series: [ {name:'Unit 1 (% sum)', data:DATA.pareto_u1, color:COLORS.accent}, {name:'Unit 2 (% sum)', data:DATA.pareto_u2, color:COLORS.accent2} ], stacked:true, height: 420 });
+  } else {
+    document.getElementById('chartPareto').innerHTML = '<div class="note">No stoppage data loaded.</div>';
+  }
+  drawBarChart('chartElec', { labels: DATA.dates, width:620, series: [ {name:'EB (grid)', data:DATA.eb, color:COLORS.accent}, {name:'Solar', data:DATA.solar, color:COLORS.warn} ], stacked:true });
+  renderUkgChart();
+}
+
+function renderUkgChart(){
+  const el = document.getElementById('chartUkg');
+  const W = 620, H = 280, ML=54, MR=54, MT=16, MB=56;
+  const plotW = W-ML-MR, plotH = H-MT-MB;
+  const n = DATA.dates.length;
+  const groupW = plotW/n;
+  const ukg = DATA.ukg, eff = DATA.efficiency;
+  const ukgVals = ukg.filter(v=>v!==null&&v!==undefined);
+  const maxUkg = (ukgVals.length ? Math.max(...ukgVals) : 1)*1.15;
+  const minEff = 60, maxEff = 100;
+  const yUkg = v => MT + plotH - (v/maxUkg)*plotH;
+  const yEff = v => MT + plotH - ((v-minEff)/(maxEff-minEff))*plotH;
+
+  let grid='';
+  for(let t=0;t<=5;t++){
+    const vU = maxUkg*t/5;
+    const y = yUkg(vU);
+    grid += svgTag('line',{x1:ML,y1:y.toFixed(1),x2:W-MR,y2:y.toFixed(1),class:'gridline'});
+    grid += svgTag('text',{x:ML-8,y:(y+3).toFixed(1),'text-anchor':'end'}, vU.toFixed(2));
+    const vE = minEff + (maxEff-minEff)*t/5;
+    grid += svgTag('text',{x:W-MR+8,y:(y+3).toFixed(1)}, vE.toFixed(0)+'%');
+  }
+  let xlabels='';
+  const labelEvery = Math.ceil(n/12);
+  DATA.dates.forEach((l,i)=>{
+    if(i%labelEvery===0 || i===n-1){
+      const cx = ML + i*groupW + groupW/2;
+      xlabels += svgTag('text',{x:cx.toFixed(1), y:H-MB+18, 'text-anchor':'middle'}, shortDate(l));
+    }
+  });
+  const ukgLabelRotate = n>8 ? -35 : 0;
+  const ukgLabelAnchor = ukgLabelRotate ? 'start' : 'middle';
+  function lineFor(data, color, yFn, labelOffset, decimals){
+    let pts=[]; data.forEach((v,i)=>{ if(v!==null&&v!==undefined) pts.push([ML+i*groupW+groupW/2, yFn(v)]); });
+    let d = pts.length ? 'M'+pts.map(p=>p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' L') : '';
+    let path = d ? svgTag('path',{d, fill:'none', stroke:color, 'stroke-width':2}) : '';
+    let dots = data.map((v,i)=> (v===null||v===undefined)?'':svgTag('circle',{cx:(ML+i*groupW+groupW/2).toFixed(1), cy:yFn(v).toFixed(1), r:2.6, fill:color}, svgTag('title',{},`${DATA.dates[i]}: ${v.toFixed(2)}`))).join('');
+    let labelsSvg = data.map((v,i)=>{
+      if(v===null||v===undefined) return '';
+      const cx = ML+i*groupW+groupW/2, cy = yFn(v)+labelOffset;
+      return vlabel(cx, cy, v.toFixed(decimals), ukgLabelRotate, ukgLabelAnchor);
+    }).join('');
+    return path+dots+labelsSvg;
+  }
+  const ukgLine = lineFor(ukg, COLORS.bad, yUkg, -9, 2);
+  const effLine = lineFor(eff, COLORS.accent2, yEff, -9, 1);
+  const legend = svgTag('rect',{x:ML, y:H-14, width:10, height:10, fill:COLORS.bad, rx:2}) +
+    svgTag('text',{x:ML+15, y:H-5, class:'legend'}, 'Units/Kg') +
+    svgTag('rect',{x:ML+120, y:H-14, width:10, height:10, fill:COLORS.accent2, rx:2}) +
+    svgTag('text',{x:ML+135, y:H-5, class:'legend'}, 'Efficiency %');
+  const svg = svgTag('svg',{class:'chart', viewBox:`0 0 ${W} ${H+16}`, xmlns:'http://www.w3.org/2000/svg'},
+    svgTag('line',{x1:ML,y1:MT,x2:ML,y2:MT+plotH,class:'axisline'}) +
+    svgTag('line',{x1:W-MR,y1:MT,x2:W-MR,y2:MT+plotH,class:'axisline'}) +
+    svgTag('line',{x1:ML,y1:MT+plotH,x2:W-MR,y2:MT+plotH,class:'axisline'}) +
+    grid + xlabels + ukgLine + effLine + legend
+  );
+  el.innerHTML = svg;
+}
+
+// ---------- Manage Data tab ----------
+function renderManageDataTab(){
+  const tbody = document.getElementById('manageDatesTbody');
+  if(DATA.dates.length === 0){
+    tbody.innerHTML = '<tr><td colspan="5" class="note">No data loaded. Upload a workbook above.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = DATA.dates.map((dt,i)=>{
+    const g = RAW.grand_totals.find(x=>x.date===dt);
+    return `<tr>
+      <td>${dt}</td><td>${esc(g?g.sheet:'-')}</td><td>${fmt(DATA.target[i])}</td><td>${fmt(DATA.actual[i])}</td>
+      <td><button class="del-date-btn" data-date="${dt}">Delete</button></td>
+    </tr>`;
+  }).join('');
+  tbody.querySelectorAll('.del-date-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const dt = btn.dataset.date;
+      if(!window.confirm('Remove '+dt+' from the dashboard? This only affects this dashboard file, not the source workbook.')) return;
+      deleteDate(dt);
+    });
+  });
+}
+
+function deleteDate(date){
+  RAW.items = RAW.items.filter(x=>x.date!==date);
+  RAW.unit_totals = RAW.unit_totals.filter(x=>x.date!==date);
+  RAW.grand_totals = RAW.grand_totals.filter(x=>x.date!==date);
+  RAW.stoppages = RAW.stoppages.filter(x=>x.date!==date);
+  RAW.electricity = RAW.electricity.filter(x=>x.date!==date);
+  RAW.waste_stock = RAW.waste_stock.filter(x=>x.date!==date);
+  const statusEl = document.getElementById('uploadStatus');
+  if(statusEl) statusEl.textContent = `Removed ${date}.`;
+  renderAll();
+}
+
+document.getElementById('xlsxUpload').addEventListener('change', async (ev)=>{
+  const file = ev.target.files[0];
+  if(!file) return;
+  const statusEl = document.getElementById('uploadStatus');
+  statusEl.textContent = 'Parsing workbook…';
+  try {
+    const buf = await file.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    const parsed = await parseWorkbookFromBytes(bytes);
+    if(!parsed.grand_totals.length){
+      statusEl.textContent = 'No daily sheets recognized in this file (expected sheet names like "01.07.2026"). Nothing changed.';
+    } else {
+      RAW = parsed;
+      renderAll();
+      statusEl.textContent = `Loaded ${parsed.grand_totals.length} day(s) from "${file.name}".`;
+    }
+  } catch(err){
+    statusEl.textContent = 'Could not read this file: ' + err.message;
+  }
+  ev.target.value = '';
+});
+
+document.getElementById('overviewMonthFilter').addEventListener('change', (e)=>{
+  overviewMonth = e.target.value;
+  const view = computeOverviewView(overviewMonth);
+  renderKpiRow(view);
+  renderOverviewCharts(view);
+});
+
+// ---------- Master render / tabs ----------
+function renderAll(){
+  DATA = buildPayloadFromRaw(RAW);
+  renderOverviewTab();
+  renderYearlyTab();
+  renderHeatmap();
+  rebuildRows();
+  renderTable();
+  initDailyReportTab();
+  renderStoppageTab();
+  renderManageDataTab();
+}
+
+document.querySelectorAll('.tabbtn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.tabbtn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+  });
+});
+
+renderAll();
+</script>
+</body>
+</html>
