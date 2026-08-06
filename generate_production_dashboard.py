@@ -13,18 +13,22 @@ Input : an .xlsx workbook where each sheet is one calendar day (sheet name
 
 Output: a single self-contained offline HTML dashboard (no external network
         dependencies - all charts are hand-drawn inline SVG) with:
+          - Daily Report tab (pick a date, see that day's full detail)
           - Monthly Overview tab (KPIs, trend, efficiency, unit split,
-            waste, production mix by yarn count)
-          - Daily Detail tab (efficiency heatmap + sortable register table
-            with click-through to item-level breakdown per day)
-          - Stoppage & Utilities tab (stoppage Pareto, electricity usage,
-            units/kg vs efficiency)
+            waste, production mix by yarn count) with a month filter
+          - Yearly Overview tab (month-by-month rollup, once >1 month loaded)
+          - Monthly Stoppage & Usage Summary tab (Pareto, electricity, UKG)
+          - Daily Detail Overview tab (heatmap + sortable register table)
+          - Manage Data tab (upload merges into existing data client-side,
+            delete a day, Clear All Data, or Save Dashboard File to export
+            everything currently loaded as a new shareable HTML file)
 
 Usage:
     python3 generate_production_dashboard.py <input.xlsx> <output.html>
+    python3 generate_production_dashboard.py --blank <output.html>
 
-If <output.html> is omitted, it is derived from the month found in the data,
-e.g. "Production_Dashboard_2026-07.html", written next to the input file.
+If <output.html> is omitted (non-blank mode), it is derived from the month
+found in the data, e.g. "Production_Dashboard_2026-07.html".
 """
 import sys, re, json
 from collections import defaultdict
@@ -356,10 +360,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <div class="kpis" id="dayKpiProd"></div>
     </div>
     <div class="card">
-      <h3>Top Stoppage Reason (Unit-wise)</h3>
-      <div class="kpis" id="dayKpiStoppage"></div>
-    </div>
-    <div class="card">
       <h3>Waste &amp; Waste Rate</h3>
       <div class="kpis" id="dayKpiWaste"></div>
     </div>
@@ -384,6 +384,17 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <div class="chartwrap" id="chartDayUnits"></div>
     </div>
     <div class="card">
+      <h3>Electricity &amp; Waste Summary</h3>
+      <div class="desc">Utilities and waste totals for this date</div>
+      <div class="kpis" id="dayUtilRow"></div>
+    </div>
+    <div class="card">
+      <h3>Stoppage Reasons</h3>
+      <div class="desc">Top reason per unit, and % stoppage by category and unit, this date</div>
+      <div class="kpis" id="dayKpiStoppage"></div>
+      <div class="chartwrap" id="chartDayStoppage"></div>
+    </div>
+    <div class="card">
       <h3>Waste Types</h3>
       <div class="desc">Waste quantity by type, this date (kg) &middot; sorted highest to lowest</div>
       <div class="tablewrap">
@@ -392,16 +403,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
           <tbody id="dayWasteTbody"></tbody>
         </table>
       </div>
-    </div>
-    <div class="card">
-      <h3>Stoppage Reasons</h3>
-      <div class="desc">% stoppage by category and unit, this date</div>
-      <div class="chartwrap" id="chartDayStoppage"></div>
-    </div>
-    <div class="card">
-      <h3>Electricity &amp; Waste Summary</h3>
-      <div class="desc">Utilities and waste totals for this date</div>
-      <div class="kpis" id="dayUtilRow"></div>
     </div>
   </div>
 
@@ -468,20 +469,27 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
   <div class="tab" id="tab-managedata">
     <div class="card">
-      <h3>Upload / Replace Monthly Data</h3>
-      <div class="desc">Upload the monthly MIS workbook (.xlsx) — add a new sheet and re-upload to bring in a new day, or delete a sheet and re-upload to remove one. Everything is re-parsed right here in your browser (no internet needed) and every chart and table below refreshes to match exactly what's in the file.</div>
+      <h3>Save &amp; Share This Dashboard</h3>
+      <div class="desc">Downloads a new, self-contained HTML file with everything currently loaded here baked in — every month you've uploaded, minus anything you've deleted. Email it, put it on SharePoint, or share it however you like: anyone who opens it sees this data immediately, no upload needed on their end, no internet needed either.</div>
+      <button id="saveShareBtn" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:9px 16px;font-size:14px;cursor:pointer;font-weight:600;">Save Dashboard File</button>
+      <div class="note" id="saveShareStatus"></div>
+    </div>
+    <div class="card">
+      <h3>Add / Update Data from a Workbook</h3>
+      <div class="desc">Upload a monthly MIS workbook (.xlsx) — its days are added to whatever is already loaded here. Uploading a month you already have re-parses just that month's days in place (no duplicates); every other month you've loaded stays untouched. Everything is parsed right here in your browser, no internet needed.</div>
       <input type="file" id="xlsxUpload" accept=".xlsx">
       <div class="note" id="uploadStatus"></div>
     </div>
     <div class="card">
       <h3>Loaded Days</h3>
-      <div class="desc">Days currently loaded into this dashboard &middot; delete a single day without re-uploading the whole workbook</div>
+      <div class="desc">Every day currently loaded into this dashboard, across all uploaded months &middot; delete any single day at will without touching the rest</div>
       <div class="tablewrap">
         <table id="manageDatesTable">
           <thead><tr><th>Date</th><th>Sheet Name</th><th>Target (kg)</th><th>Actual (kg)</th><th></th></tr></thead>
           <tbody id="manageDatesTbody"></tbody>
         </table>
       </div>
+      <button id="clearAllDataBtn" style="margin-top:12px;background:var(--panel);color:var(--bad);border:1px solid var(--border);border-radius:8px;padding:8px 14px;font-size:14px;cursor:pointer;">Clear All Data</button>
     </div>
   </div>
 </main>
@@ -1742,6 +1750,28 @@ function deleteDate(date){
   renderAll();
 }
 
+// Adds every day found in `parsed` into RAW. If a date already exists in RAW
+// (e.g. re-uploading a month to correct it), that date's old rows are dropped
+// first so it's replaced in place rather than duplicated — every other
+// already-loaded date is left completely untouched.
+function mergeParsedIntoRaw(parsed){
+  const datesBefore = new Set(RAW.grand_totals.map(g => g.date));
+  const incomingDates = new Set(parsed.grand_totals.map(g => g.date));
+  const overlapping = [...incomingDates].filter(d => datesBefore.has(d));
+  const newCount = incomingDates.size - overlapping.length;
+
+  const keep = (arr) => arr.filter(x => !incomingDates.has(x.date));
+  RAW.items = keep(RAW.items).concat(parsed.items);
+  RAW.unit_totals = keep(RAW.unit_totals).concat(parsed.unit_totals);
+  RAW.grand_totals = keep(RAW.grand_totals).concat(parsed.grand_totals);
+  RAW.stoppages = keep(RAW.stoppages).concat(parsed.stoppages);
+  RAW.electricity = keep(RAW.electricity).concat(parsed.electricity);
+  RAW.waste_stock = keep(RAW.waste_stock).concat(parsed.waste_stock);
+  if(!RAW.company_name && parsed.company_name) RAW.company_name = parsed.company_name;
+
+  return { newCount, overwrittenCount: overlapping.length };
+}
+
 document.getElementById('xlsxUpload').addEventListener('change', async (ev)=>{
   const file = ev.target.files[0];
   if(!file) return;
@@ -1754,14 +1784,26 @@ document.getElementById('xlsxUpload').addEventListener('change', async (ev)=>{
     if(!parsed.grand_totals.length){
       statusEl.textContent = 'No daily sheets recognized in this file (expected sheet names like "01.07.2026"). Nothing changed.';
     } else {
-      RAW = parsed;
+      const { newCount, overwrittenCount } = mergeParsedIntoRaw(parsed);
       renderAll();
-      statusEl.textContent = `Loaded ${parsed.grand_totals.length} day(s) from "${file.name}".`;
+      let msg = `Added ${newCount} new day(s) from "${file.name}".`;
+      if(overwrittenCount) msg += ` Re-parsed ${overwrittenCount} day(s) that were already loaded (replaced in place).`;
+      msg += ` ${DATA.dates.length} day(s) loaded in total.`;
+      statusEl.textContent = msg;
     }
   } catch(err){
     statusEl.textContent = 'Could not read this file: ' + err.message;
   }
   ev.target.value = '';
+});
+
+document.getElementById('clearAllDataBtn').addEventListener('click', ()=>{
+  if(DATA.dates.length === 0) return;
+  if(!window.confirm(`Remove all ${DATA.dates.length} loaded day(s) from this dashboard? This only affects this dashboard file, not any source workbook.`)) return;
+  RAW = { company_name: RAW.company_name, items: [], unit_totals: [], grand_totals: [], stoppages: [], electricity: [], waste_stock: [] };
+  renderAll();
+  const statusEl = document.getElementById('uploadStatus');
+  if(statusEl) statusEl.textContent = 'Cleared all data.';
 });
 
 document.getElementById('overviewMonthFilter').addEventListener('change', (e)=>{
@@ -1770,6 +1812,66 @@ document.getElementById('overviewMonthFilter').addEventListener('change', (e)=>{
   renderKpiRow(view);
   renderOverviewCharts(view);
 });
+
+// ---------- Save & Share (export a new self-contained HTML file) ----------
+// Takes the page's own current HTML (document.documentElement.outerHTML) and
+// swaps the embedded `let RAW = ...;` payload for the current in-memory RAW
+// (post merge/delete edits), so the exported file opens with exactly what's
+// loaded here right now — no server, no re-upload needed by whoever opens it.
+function buildShareableHtml(){
+  const dates = [...DATA.dates].sort();
+  const monthLabel = dates.length
+    ? (dates[0] + ' to ' + dates[dates.length-1])
+    : 'No data loaded yet — upload a workbook in the Manage Data tab';
+  const title = RAW.company_name ? (RAW.company_name + ' — Production Summary Dashboard') : 'Production Summary Dashboard';
+
+  let html = document.documentElement.outerHTML;
+
+  // Replace the embedded RAW JSON. The template always follows `let RAW = <json>;`
+  // immediately with `\nconst COLORS`, which JSON content itself will not contain,
+  // so this non-greedy match reliably captures exactly the original assignment.
+  const rawMarker = /let RAW = [\s\S]*?;\nconst COLORS/;
+  if(!rawMarker.test(html)){
+    throw new Error('Could not locate embedded data in this page to replace — save aborted.');
+  }
+  html = html.replace(rawMarker, 'let RAW = ' + JSON.stringify(RAW) + ';\nconst COLORS');
+
+  // Refresh the static title/header text (not touched by renderAll()) so a
+  // reopened file reflects the current date range, not the one it shipped with.
+  html = html.replace(/<title>[\s\S]*?<\/title>/, '<title>' + esc(title) + '</title>');
+  html = html.replace(/<h1>[\s\S]*?<\/h1>/, '<h1>' + esc(title) + '</h1>');
+  html = html.replace(/(<div class="sub">Spinning MIS · )[\s\S]*?( · Unit 1 &amp; Unit 2<\/div>)/, '$1' + esc(monthLabel) + '$2');
+
+  return '<!DOCTYPE html>\n' + html;
+}
+
+function downloadShareableDashboard(){
+  const statusEl = document.getElementById('saveShareStatus');
+  try {
+    const html = buildShareableHtml();
+    const months = [...new Set(DATA.dates.map(monthOf))].sort();
+    const label = months.length === 0 ? 'empty'
+      : months.length === 1 ? months[0]
+      : (months[0] + '_to_' + months[months.length-1]);
+    const filename = `Production_Dashboard_${label}.html`;
+
+    const blob = new Blob([html], {type:'text/html'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    statusEl.textContent = `Saved "${filename}" with ${DATA.dates.length} day(s) of data — check your Downloads folder, then share that file however you like.`;
+  } catch(err){
+    statusEl.textContent = 'Could not save this file: ' + err.message;
+  }
+}
+
+document.getElementById('saveShareBtn').addEventListener('click', downloadShareableDashboard);
 
 // ---------- Master render / tabs ----------
 function renderAll(){
